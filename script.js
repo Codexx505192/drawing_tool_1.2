@@ -8,75 +8,145 @@ const toolsList = document.getElementById('tools-list');
 
 const ctx = drawingBoard.getContext('2d');
 
+const board_width = drawingBoard.width = 600;
+const board_height = drawingBoard.height = 500;
 
-const board_width = drawingBoard.width = 600
-const board_height = drawingBoard.height = 500
+let lineWidth = lineWidthInput.value;
+let currentColor = colorPickInput.value;
+let isDrawing = false;
 
-let lineWidth = lineWidthInput.value
-let currentColor = colorPickInput.value
-let isDrawing = false
-
-
-const colors = ["black", "red", "green", "blue", "orange", "yellow"]
+const colors = ["black", "red", "green", "blue", "orange", "yellow"];
 const tools = {
     brush: "b",
     rectangle: "r",
     line: "l",
-}
-let currentTool = tools.rectangle
-let prevMouseX = null
-let prevMouseY = null
-let snapshat = null
+};
+let currentTool = tools.brush; 
+let prevMouseX = null;
+let prevMouseY = null;
+let snapshot = null;
 
+// 1. ГЕНЕРАЦИЯ ПАЛИТРЫ ЦВЕТОВ
+colors.forEach(color => {
+    const li = document.createElement('li');
+    li.style.backgroundColor = color;
+    li.classList.add('color-circle');
+    li.addEventListener('click', () => {
+        currentColor = color;
+        colorPickInput.value = (color === 'black') ? '#000000' : color; 
+    });
+    colorList.appendChild(li);
+});
 
-function drawBrush(event){
-    ctx.lineCap = "round"
-    ctx.lineJoin = "round"
-    ctx.lineTo(event.offsetX, event.offsetY)
-    ctx.stroke()
-}
+colorPickInput.addEventListener('input', (e) => {
+    currentColor = e.target.value;
+});
 
+// 2. ГЕНЕРАЦИЯ ИНСТРУМЕНТОВ
+Object.keys(tools).forEach(toolName => {
+    const li = document.createElement('li');
+    
+    const radio = document.createElement('input');
+    radio.type = 'radio';
+    radio.name = 'tool-selection';
+    radio.id = `tool-${toolName}`;
+    radio.value = tools[toolName];
+    if (tools[toolName] === currentTool) radio.checked = true;
 
-function draw(event){
-    if(!isDrawing) return
-    if(currentTool === tools.brush){
-        drawBrush(event)
-    }else if(currentTool === tools.rectangle){
-        drawRect(event)
-    }else if(currentTool === tools.line){
-      
+    const label = document.createElement('label');
+    label.htmlFor = `tool-${toolName}`;
+    label.textContent = ` ${toolName} `;
+
+    radio.addEventListener('change', (e) => {
+        currentTool = e.target.value;
+    });
+
+    li.appendChild(label);
+    label.appendChild(radio);
+    toolsList.appendChild(li);
+});
+
+lineWidthInput.addEventListener('input', (e) => {
+    lineWidth = e.target.value;
+});
+
+// 3. УНИВЕРСАЛЬНЫЕ КООРДИНАТЫ (ПК + СМАРТФОН)
+function getCoordinates(event) {
+    if (event.touches && event.touches.length > 0) {
+        const rect = drawingBoard.getBoundingClientRect();
+        // Рассчитываем touch-координаты с учетом масштабирования canvas на мобилках
+        return {
+            x: (event.touches[0].clientX - rect.left) * (board_width / rect.width),
+            y: (event.touches[0].clientY - rect.top) * (board_height / rect.height)
+        };
+    } else {
+        return {
+            x: event.offsetX,
+            y: event.offsetY
+        };
     }
 }
 
-
-
-
-function startDrawing(event){
-    isDrawing = true
-    // ctx.strokeStyle = currentColor
-    // ctx.strokeStyle = lineWidth
-    // ctx.beginPath()
-
-    prevMouseX = event.offsetX
-    prevMouseY = event.offsetY
-    ctx.strokeStyle = currentColor
-    ctx.lineWidth = lineWidth
-    ctx.beginPath()
-    snapshat = ctx.getImageData(0, 0, board_width, board_height)
+// 4. ЛОГИКА РИСОВАНИЯ
+function startDrawing(event) {
+    isDrawing = true;
+    const coords = getCoordinates(event);
+    prevMouseX = coords.x;
+    prevMouseY = coords.y;
+    
+    ctx.strokeStyle = currentColor;
+    ctx.lineWidth = lineWidth;
+    
+    ctx.beginPath();
+    if (currentTool === tools.brush) {
+        ctx.moveTo(prevMouseX, prevMouseY);
+    }
+    snapshot = ctx.getImageData(0, 0, board_width, board_height);
 }
 
-function stopDrawing(){
-isDrawing = false
-ctx.closePath()
+function draw(event) {
+    if (!isDrawing) return;
+    
+    // Блокируем скролл страницы пальцем во время рисования
+    if (event.type === 'touchmove') event.preventDefault();
+
+    const coords = getCoordinates(event);
+
+    if (currentTool === tools.brush) {
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+    } else if (currentTool === tools.rectangle) {
+        ctx.putImageData(snapshot, 0, 0);
+        ctx.strokeRect(prevMouseX, prevMouseY, coords.x - prevMouseX, coords.y - prevMouseY);
+    } else if (currentTool === tools.line) {
+        ctx.putImageData(snapshot, 0, 0);
+        ctx.beginPath();
+        ctx.moveTo(prevMouseX, prevMouseY);
+        ctx.lineTo(coords.x, coords.y);
+        ctx.stroke();
+    }
 }
 
-function drawRect(event){
-    ctx.putImageData(snapshat, 0, 0)
-    ctx.strokeRect(prevMouseX, prevMouseY, event.offsetX, event.offsetY - prevMouseY)
+function stopDrawing() {
+    isDrawing = false;
+    ctx.closePath();
+}
+
+function clearBoard() {
+    ctx.clearRect(0, 0, board_width, board_height);
 }
 
 
+drawingBoard.addEventListener("mousedown", startDrawing);
+drawingBoard.addEventListener("mousemove", draw);
+window.addEventListener("mouseup", stopDrawing);
 
-drawingBoard.addEventListener("mousemove", draw)
-window.addEventListener("mousedown", startDrawing)
-window.addEventListener("mouseup", stopDrawing)
+// Для телефонов (Сенсор)
+drawingBoard.addEventListener("touchstart", startDrawing, { passive: false });
+drawingBoard.addEventListener("touchmove", draw, { passive: false });
+window.addEventListener("touchend", stopDrawing);
+
+// Кнопка очистки
+clearBtn.addEventListener('click', clearBoard);
